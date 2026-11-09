@@ -26,8 +26,10 @@ explicit, manual user action** — never by inference.
 
 The atomic-note format is rigid (one fact per paragraph, every sentence begins
 with the note's TOPIC as subject, permanent knowledge only, wiki-links mark
-related concepts). That rigidity is what makes deterministic, offline card
-generation viable without an LLM.
+related concepts). The author marks the answer of each fact explicitly with
+`**bold**` or `::`, so generation never guesses which part of a sentence
+matters. That is what makes deterministic, offline card generation viable
+without an LLM.
 
 ---
 
@@ -97,11 +99,15 @@ Structure:
 #research
 #study
 
-<TOPIC> is <definition>. May contain [[wiki-links]].
+<TOPIC> is :: <definition>. May contain [[wiki-links]].
 
-<TOPIC> <verb> <permanent fact>.
+<TOPIC> <verb> **<answer>** <rest of the fact>.
 
-<TOPIC> <verb> <permanent fact>.
+<TOPIC> <verb> :: <answer>.
+
+<Explicit question>? :: <answer>
+
+<TOPIC> <verb> <fact that is not studied>.
 ```
 
 Parsing rules:
@@ -120,10 +126,15 @@ Parsing rules:
   is exactly one sentence. Trim surrounding whitespace.
 - Every fact sentence begins with `TOPIC` as subject (format guarantee). If a
   sentence does not, the tool **SHOULD** still process it and emit a warning.
+  Explicit questions (cue ending in `?` before `::`) are exempt.
+- **Answer markers:** `**bold**` spans and a single `::` (see §5.1). Both are
+  ignored inside inline code spans (`` `...` ``), so code, paths and URLs need no
+  escaping. A fact with no marker produces no card.
 - **Wiki-links** use `[[Concept Name]]`. A link's text is the target note's
-  title (acronym form preferred, e.g. `[[CNV]]`). Wiki-link **target
-  resolution** (link → file) is only needed post-v1 for the concept graph; in
-  v1 links matter as cloze targets.
+  title (acronym form preferred, e.g. `[[CNV]]`). Links do not create cards by
+  themselves; wrap one in bold (`**[[etcd]]**`) to make it a cloze answer.
+  Wiki-link **target resolution** (link → file) is only needed post-v1 for the
+  concept graph.
 
 ---
 
@@ -131,20 +142,26 @@ Parsing rules:
 
 ### 5.1 Deterministic templates (default, no LLM)
 
-For each note, generate cards by these rules, in order:
+The author marks answers explicitly; the tool never infers which part of a
+sentence is the answer. For each fact:
 
-| Source sentence | Card kind | Front | Back |
+| Fact | Card kind | Front | Back |
 |---|---|---|---|
-| The `is` / `are` sentence | `definition` | `What is <TOPIC>?` | full sentence |
-| Any sentence containing wiki-link(s) | `cloze` — **one card per distinct link** | sentence with that link's text replaced by `___` | full sentence |
-| A sentence with no `is` and no wiki-links | `property` | sentence with the predicate (everything after `<TOPIC> <first-token>`) replaced by `___` | full sentence |
+| contains `**X**` | `cloze` — **one card per distinct bold span** | sentence with that span replaced by `___`, other spans unwrapped | full sentence |
+| `cue :: answer` | `cloze` | `cue ___` (+ answer's trailing punctuation) | full sentence |
+| `cue :: answer`, cue ends with `?` | `question` | cue | answer |
+| `cue :: answer`, cue is exactly `<TOPIC> is` / `<TOPIC> are` | `definition` | `What is/are <TOPIC>?` | full sentence |
+| no marker | — no card | | |
 
 Notes:
 
-- The `is` sentence, if it also contains wiki-links, produces **both** the
-  `definition` Q&A card and one `cloze` card per link.
-- `property` cards are the weakest deterministic output; the LLM backend adds
-  the most value here. They **MAY** be gated behind a config flag if noisy.
+- At most one `::` per fact; a fact with more, or with an empty cue or answer,
+  produces no card and a warning.
+- A fact may combine `::` with bold spans; each produces its own card
+  (deduplicated by `cloze_key`).
+- Markers inside inline code spans are ignored. Markers are removed from card
+  text.
+- `generate` previews cards and reports facts without markers (`--unmarked`).
 - Generation output is stable: the same note **MUST** always yield the same set
   of `(kind, cloze_key, front, back)` tuples.
 
@@ -172,7 +189,9 @@ existing learning identity.
 
 ### 6.1 `sentence_hash` normalization
 
-Compute over the fact sentence:
+Compute over the fact sentence **with markers removed** (`::` dropped, `**`
+around bold spans dropped), so changing which part is marked never changes the
+sentence's identity:
 
 1. Trim.
 2. Replace `[[X]]` with its inner text `X` (drop the brackets, keep the words).
@@ -188,10 +207,12 @@ which is correct: a changed fact is a new thing to learn.
 
 ### 6.2 `cloze_key`
 
-For a `cloze` card hiding `[[Foo]]`, `cloze_key` is the normalized inner text
-(`foo`). For `definition` and `property` cards, `cloze_key` is empty. This keeps
-the two cards from a two-link sentence distinct under
-`UNIQUE(note_id, sentence_hash, cloze_key)`.
+`cloze_key` is the normalized answer: the bold span's text or the text after
+`::`, with `[[X]]` unwrapped, lowercased, whitespace collapsed and trailing
+punctuation dropped (`**[[Foo]]**` → `foo`). This keeps the cards from a
+multi-span sentence distinct under `UNIQUE(note_id, sentence_hash, cloze_key)`,
+and makes moving a marker to a different answer a new card (the old one is
+orphaned and resolvable).
 
 ---
 
@@ -223,7 +244,7 @@ cards(
   note_id       INTEGER NOT NULL REFERENCES notes(id),
   sentence_hash TEXT NOT NULL,
   cloze_key     TEXT NOT NULL DEFAULT '',
-  kind          TEXT NOT NULL,          -- definition | cloze | property
+  kind          TEXT NOT NULL,          -- definition | cloze | question
   front         TEXT NOT NULL,
   back          TEXT NOT NULL,
   status        TEXT NOT NULL,          -- active | orphaned | superseded
@@ -426,9 +447,10 @@ Rules:
 
 Each **MUST** be covered by an automated test.
 
-1. **Deterministic generation.** A note with an `is` sentence and a fact
-   sentence containing two wiki-links yields: 1 `definition` card + 2 `cloze`
-   cards (one per link). Regenerating the same note yields the identical set.
+1. **Deterministic generation.** A note with a `<TOPIC> is :: …` fact and a
+   fact with two bold spans yields: 1 `definition` card + 2 `cloze` cards (one
+   per span). A fact without markers yields no card. Regenerating the same note
+   yields the identical set.
 2. **Cosmetic edit preserves history.** Renaming a wiki-link or changing
    trailing punctuation (normalizes to the same `sentence_hash`) → card stays
    `unchanged`, learning state intact, **0 orphans**.
@@ -469,5 +491,4 @@ Each **MUST** be covered by an automated test.
 
 - **TUI-first vs Nvim-first** for the interactive frontend. Engine is identical;
   affects only whether Phase 4 or Phase 5 ships first.
-- Whether `property` cards ship on by default or behind a config flag in v1.
 

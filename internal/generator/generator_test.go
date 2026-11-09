@@ -1,249 +1,270 @@
 package generator
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/clobrano/mneme/internal/parser"
 )
 
 func makeNote(title string, facts []string) *parser.Note {
-	return &parser.Note{
-		Title: title,
-		Facts: facts,
-		ID:    0,
+	return &parser.Note{Title: title, Facts: facts}
+}
+
+func oneCard(t *testing.T, topic, fact string) Card {
+	t.Helper()
+	cards, err := FactCards(topic, fact)
+	if err != nil {
+		t.Fatalf("FactCards(%q): %v", fact, err)
+	}
+	if len(cards) != 1 {
+		t.Fatalf("FactCards(%q) = %d cards, want 1: %+v", fact, len(cards), cards)
+	}
+	return cards[0]
+}
+
+func TestMarkerCloze(t *testing.T) {
+	c := oneCard(t, "This concept", "This concept is a way to build :: some random thing.")
+	if c.Kind != KindCloze {
+		t.Errorf("kind = %q, want cloze", c.Kind)
+	}
+	if want := "This concept is a way to build ___."; c.Front != want {
+		t.Errorf("front = %q, want %q", c.Front, want)
+	}
+	if want := "This concept is a way to build some random thing."; c.Back != want {
+		t.Errorf("back = %q, want %q", c.Back, want)
+	}
+	if c.ClozeKey != "some random thing" {
+		t.Errorf("cloze key = %q", c.ClozeKey)
 	}
 }
 
-// TestDefinitionAndTwoClozeCards: acceptance criterion 1
-// "is" sentence + two-link sentence → 1 definition + 2 cloze
-func TestDefinitionAndTwoClozeCards(t *testing.T) {
-	note := makeNote("Kubernetes", []string{
-		"Kubernetes is a container orchestration platform.",
-		"Kubernetes uses [[etcd]] for storage and [[CNI]] for networking.",
-	})
+func TestBoldCloze(t *testing.T) {
+	c := oneCard(t, "This concept", "This concept is a way to build **some random thing**.")
+	if c.Kind != KindCloze {
+		t.Errorf("kind = %q, want cloze", c.Kind)
+	}
+	if want := "This concept is a way to build ___."; c.Front != want {
+		t.Errorf("front = %q, want %q", c.Front, want)
+	}
+	if want := "This concept is a way to build some random thing."; c.Back != want {
+		t.Errorf("back = %q, want %q", c.Back, want)
+	}
+}
 
-	cards := GenerateCards(note)
+func TestBoldMidSentence(t *testing.T) {
+	c := oneCard(t, "Kubernetes", "Kubernetes uses **[[etcd]]** for persistent storage.")
+	if want := "Kubernetes uses ___ for persistent storage."; c.Front != want {
+		t.Errorf("front = %q, want %q", c.Front, want)
+	}
+	if want := "Kubernetes uses [[etcd]] for persistent storage."; c.Back != want {
+		t.Errorf("back = %q, want %q", c.Back, want)
+	}
+	if c.ClozeKey != "etcd" {
+		t.Errorf("cloze key = %q, want etcd", c.ClozeKey)
+	}
+}
 
-	var defs, clozes, props int
-	for _, c := range cards {
-		switch c.Kind {
-		case "definition":
-			defs++
-		case "cloze":
-			clozes++
-		case "property":
-			props++
+func TestMultipleBoldSpans(t *testing.T) {
+	cards, err := FactCards("Kubernetes", "Kubernetes uses **etcd** for storage and **CNI** for networking.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 2 {
+		t.Fatalf("got %d cards, want 2", len(cards))
+	}
+	// Each card blanks only its own span; the other is shown unwrapped.
+	if want := "Kubernetes uses ___ for storage and CNI for networking."; cards[0].Front != want {
+		t.Errorf("front[0] = %q, want %q", cards[0].Front, want)
+	}
+	if want := "Kubernetes uses etcd for storage and ___ for networking."; cards[1].Front != want {
+		t.Errorf("front[1] = %q, want %q", cards[1].Front, want)
+	}
+	if cards[0].SentenceHash != cards[1].SentenceHash {
+		t.Error("cards from the same fact must share the sentence hash")
+	}
+}
+
+func TestDuplicateBoldDeduplicated(t *testing.T) {
+	cards, _ := FactCards("K", "K uses **etcd** and **ETCD**.")
+	if len(cards) != 1 {
+		t.Errorf("got %d cards, want 1 (same answer deduplicated)", len(cards))
+	}
+}
+
+func TestMarkerAndBoldTogether(t *testing.T) {
+	cards, err := FactCards("Kubernetes", "Kubernetes keeps **cluster state** in :: etcd.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 2 {
+		t.Fatalf("got %d cards, want 2", len(cards))
+	}
+	if want := "Kubernetes keeps cluster state in ___."; cards[0].Front != want {
+		t.Errorf(":: front = %q, want %q", cards[0].Front, want)
+	}
+	if want := "Kubernetes keeps ___ in etcd."; cards[1].Front != want {
+		t.Errorf("bold front = %q, want %q", cards[1].Front, want)
+	}
+}
+
+func TestQuestionCard(t *testing.T) {
+	c := oneCard(t, "Kubernetes", "Which port does the Kubernetes API server use? :: 6443")
+	if c.Kind != KindQuestion {
+		t.Errorf("kind = %q, want question", c.Kind)
+	}
+	if c.Front != "Which port does the Kubernetes API server use?" || c.Back != "6443" {
+		t.Errorf("front/back = %q / %q", c.Front, c.Back)
+	}
+}
+
+func TestDefinitionCard(t *testing.T) {
+	c := oneCard(t, "ETCD", "ETCD is :: a distributed key-value store.")
+	if c.Kind != KindDefinition {
+		t.Errorf("kind = %q, want definition", c.Kind)
+	}
+	if c.Front != "What is ETCD?" {
+		t.Errorf("front = %q", c.Front)
+	}
+	if c.Back != "ETCD is a distributed key-value store." {
+		t.Errorf("back = %q", c.Back)
+	}
+
+	c = oneCard(t, "Pods", "Pods are :: the smallest deployable units.")
+	if c.Front != "What are Pods?" {
+		t.Errorf("plural front = %q", c.Front)
+	}
+}
+
+// Only an exact "TOPIC is ::" cue is a definition; anything longer is a cloze.
+func TestIsInsideCueIsCloze(t *testing.T) {
+	c := oneCard(t, "Kubernetes", "Kubernetes is written in :: Go.")
+	if c.Kind != KindCloze || c.Front != "Kubernetes is written in ___." {
+		t.Errorf("got %q %q", c.Kind, c.Front)
+	}
+}
+
+func TestMarkersInsideCodeIgnored(t *testing.T) {
+	_, err := FactCards("C++", "C++ uses `std::vector` and `**ptr` for things.")
+	if !errors.Is(err, ErrNoMarker) {
+		t.Errorf("err = %v, want ErrNoMarker", err)
+	}
+
+	c := oneCard(t, "C++", "C++ declares dynamic arrays with :: `std::vector`.")
+	if c.Front != "C++ declares dynamic arrays with ___." {
+		t.Errorf("front = %q", c.Front)
+	}
+}
+
+func TestNoCardErrors(t *testing.T) {
+	cases := map[string]error{
+		"Kubernetes supports horizontal scaling.": ErrNoMarker,
+		"Kubernetes uses :: etcd :: for storage.": ErrMultipleMarkers,
+		":: etcd":                                 ErrEmptyCue,
+		"Kubernetes uses ::":                      ErrEmptyAnswer,
+	}
+	for fact, want := range cases {
+		if _, err := FactCards("Kubernetes", fact); !errors.Is(err, want) {
+			t.Errorf("FactCards(%q) err = %v, want %v", fact, err, want)
 		}
 	}
+}
 
-	if defs != 1 {
-		t.Errorf("definition cards = %d, want 1", defs)
+func TestGenerateCardsSkipsUnmarkedFacts(t *testing.T) {
+	note := makeNote("Kubernetes", []string{
+		"Kubernetes is :: a container orchestration platform.",
+		"Kubernetes supports horizontal scaling.",
+		"Kubernetes uses **etcd** for storage.",
+	})
+	note.ID = 42
+	cards := GenerateCards(note)
+	if len(cards) != 2 {
+		t.Fatalf("got %d cards, want 2", len(cards))
 	}
-	if clozes != 2 {
-		t.Errorf("cloze cards = %d, want 2", clozes)
-	}
-	if props != 0 {
-		t.Errorf("property cards = %d, want 0", props)
-	}
-	if len(cards) != 3 {
-		t.Errorf("total cards = %d, want 3", len(cards))
+	for _, c := range cards {
+		if c.NoteID != 42 || c.Source != "template" {
+			t.Errorf("card %+v: bad NoteID/Source", c)
+		}
 	}
 }
 
-// TestDeterministic: acceptance criterion 1 - same note → same cards
 func TestDeterministic(t *testing.T) {
 	note := makeNote("Kubernetes", []string{
-		"Kubernetes is a container orchestration platform.",
-		"Kubernetes uses [[etcd]] for storage and [[CNI]] for networking.",
+		"Kubernetes is :: a container orchestration platform.",
+		"Kubernetes uses **etcd** for storage and **CNI** for networking.",
 	})
-
-	cards1 := GenerateCards(note)
-	cards2 := GenerateCards(note)
-
-	if len(cards1) != len(cards2) {
-		t.Fatalf("cards1 len=%d, cards2 len=%d", len(cards1), len(cards2))
+	a, b := GenerateCards(note), GenerateCards(note)
+	if len(a) != len(b) {
+		t.Fatalf("len %d vs %d", len(a), len(b))
 	}
-	for i := range cards1 {
-		if cards1[i].SentenceHash != cards2[i].SentenceHash {
-			t.Errorf("card[%d] hash differs between runs", i)
-		}
-		if cards1[i].Front != cards2[i].Front {
-			t.Errorf("card[%d] front differs between runs", i)
-		}
-		if cards1[i].Kind != cards2[i].Kind {
-			t.Errorf("card[%d] kind differs between runs", i)
+	for i := range a {
+		if a[i] != b[i] {
+			t.Errorf("card[%d] differs: %+v vs %+v", i, a[i], b[i])
 		}
 	}
 }
 
-// TestCosmeticEditPreservesHash: acceptance criterion 2
-// Renaming a wiki-link → same hash
+// Changing which part is the answer keeps the sentence identity, so history
+// can be transferred via resolve; only the cloze key changes.
+func TestMovingMarkersKeepsSentenceHash(t *testing.T) {
+	variants := []string{
+		"Kubernetes uses **etcd** for storage.",
+		"Kubernetes uses etcd for **storage**.",
+		"Kubernetes uses etcd for :: storage.",
+		"Kubernetes uses :: etcd for storage.",
+	}
+	var hash string
+	for _, v := range variants {
+		cards, err := FactCards("Kubernetes", v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if hash == "" {
+			hash = cards[0].SentenceHash
+		} else if cards[0].SentenceHash != hash {
+			t.Errorf("%q: sentence hash changed", v)
+		}
+	}
+}
+
 func TestCosmeticEditPreservesHash(t *testing.T) {
-	fact1 := "Kubernetes uses [[etcd]] for storage."
-	fact2 := "Kubernetes uses etcd for storage."
-
-	h1 := SentenceHash(fact1)
-	h2 := SentenceHash(fact2)
-
-	if h1 != h2 {
-		t.Errorf("hash changed after wiki-link rename: %s vs %s", h1, h2)
+	if SentenceHash("Kubernetes uses [[etcd]] for storage.") != SentenceHash("Kubernetes uses etcd for storage.") {
+		t.Error("hash changed after wiki-link rename")
 	}
 }
 
-// TestTrailingPunctuationPreservesHash: acceptance criterion 2
 func TestTrailingPunctuationPreservesHash(t *testing.T) {
-	fact1 := "Kubernetes is a container orchestrator."
-	fact2 := "Kubernetes is a container orchestrator"
-
-	h1 := SentenceHash(fact1)
-	h2 := SentenceHash(fact2)
-
-	if h1 != h2 {
-		t.Errorf("hash changed after removing trailing period: %s vs %s", h1, h2)
+	if SentenceHash("Kubernetes is a container orchestrator.") != SentenceHash("Kubernetes is a container orchestrator") {
+		t.Error("hash changed after removing trailing period")
 	}
 }
 
-// TestRewordingChangesHash: acceptance criterion 3
 func TestRewordingChangesHash(t *testing.T) {
-	fact1 := "Kubernetes is a container orchestration platform."
-	fact2 := "Kubernetes is an orchestration system for containers."
-
-	h1 := SentenceHash(fact1)
-	h2 := SentenceHash(fact2)
-
-	if h1 == h2 {
+	if SentenceHash("Kubernetes is a container orchestration platform.") == SentenceHash("Kubernetes is an orchestration system for containers.") {
 		t.Error("hash should differ after rewording")
 	}
 }
 
-// TestIsWithWikiLinks: is sentence + wiki-links → definition + cloze cards
-func TestIsWithWikiLinks(t *testing.T) {
-	note := makeNote("CNI", []string{
-		"CNI is the [[Container Network Interface]] used in [[Kubernetes]].",
-	})
-
-	cards := GenerateCards(note)
-
-	var defs, clozes int
-	for _, c := range cards {
-		switch c.Kind {
-		case "definition":
-			defs++
-		case "cloze":
-			clozes++
-		}
-	}
-
-	if defs != 1 {
-		t.Errorf("definition cards = %d, want 1", defs)
-	}
-	if clozes != 2 {
-		t.Errorf("cloze cards = %d, want 2 (one per link)", clozes)
-	}
-}
-
-func TestDefinitionCardFront(t *testing.T) {
-	note := makeNote("ETCD", []string{
-		"ETCD is a distributed key-value store.",
-	})
-
-	cards := GenerateCards(note)
-	if len(cards) != 1 {
-		t.Fatalf("expected 1 card, got %d", len(cards))
-	}
-	if cards[0].Kind != "definition" {
-		t.Errorf("kind = %q, want definition", cards[0].Kind)
-	}
-	if cards[0].Front != "What is ETCD?" {
-		t.Errorf("front = %q, want %q", cards[0].Front, "What is ETCD?")
-	}
-	if cards[0].Back != "ETCD is a distributed key-value store." {
-		t.Errorf("back = %q", cards[0].Back)
-	}
-}
-
-func TestClozeFront(t *testing.T) {
-	note := makeNote("Kubernetes", []string{
-		"Kubernetes uses [[etcd]] for storage.",
-	})
-	cards := GenerateCards(note)
-	if len(cards) != 1 {
-		t.Fatalf("expected 1 card, got %d", len(cards))
-	}
-	if cards[0].Kind != "cloze" {
-		t.Errorf("kind = %q, want cloze", cards[0].Kind)
-	}
-	if cards[0].Front != "Kubernetes uses ___ for storage." {
-		t.Errorf("front = %q", cards[0].Front)
-	}
-}
-
-func TestPropertyCard(t *testing.T) {
-	note := makeNote("Kubernetes", []string{
-		"Kubernetes supports horizontal scaling automatically.",
-	})
-	cards := GenerateCards(note)
-	if len(cards) != 1 {
-		t.Fatalf("expected 1 property card, got %d", len(cards))
-	}
-	if cards[0].Kind != "property" {
-		t.Errorf("kind = %q, want property", cards[0].Kind)
-	}
-	// Front should have predicate replaced with ___
-	if cards[0].Front == cards[0].Back {
-		t.Error("property card front should differ from back")
-	}
-}
-
 func TestSentenceHashNormalization(t *testing.T) {
-	// Case insensitive
 	h1 := SentenceHash("Kubernetes IS a platform.")
-	h2 := SentenceHash("kubernetes is a platform.")
-	if h1 != h2 {
+	if h1 != SentenceHash("kubernetes is a platform.") {
 		t.Error("hash should be case-insensitive")
 	}
-
-	// Extra whitespace
-	h3 := SentenceHash("Kubernetes  is  a  platform.")
-	if h1 != h3 {
+	if h1 != SentenceHash("Kubernetes  is  a  platform.") {
 		t.Error("hash should collapse whitespace")
 	}
 }
 
-func TestClozeKeyLowercase(t *testing.T) {
-	if ClozeKey("CNI") != "cni" {
-		t.Errorf("ClozeKey(CNI) = %q, want cni", ClozeKey("CNI"))
+func TestClozeKey(t *testing.T) {
+	cases := map[string]string{
+		"CNI":                   "cni",
+		"":                      "",
+		"[[etcd]].":             "etcd",
+		"Some   Random thing. ": "some random thing",
 	}
-	if ClozeKey("") != "" {
-		t.Errorf("ClozeKey('') should return empty")
-	}
-}
-
-func TestSourceIsTemplate(t *testing.T) {
-	note := makeNote("Topic", []string{
-		"Topic is a thing.",
-	})
-	cards := GenerateCards(note)
-	for _, c := range cards {
-		if c.Source != "template" {
-			t.Errorf("source = %q, want template", c.Source)
+	for in, want := range cases {
+		if got := ClozeKey(in); got != want {
+			t.Errorf("ClozeKey(%q) = %q, want %q", in, got, want)
 		}
-	}
-}
-
-func TestMultipleClozesSameLink(t *testing.T) {
-	// Same link appearing twice should produce only one cloze card (dedup)
-	note := makeNote("Kubernetes", []string{
-		"Kubernetes uses [[etcd]] and [[etcd]] for storage.",
-	})
-	cards := GenerateCards(note)
-	var clozes int
-	for _, c := range cards {
-		if c.Kind == "cloze" {
-			clozes++
-		}
-	}
-	if clozes != 1 {
-		t.Errorf("cloze cards = %d, want 1 (deduplication)", clozes)
 	}
 }

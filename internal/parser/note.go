@@ -87,6 +87,11 @@ func ParseNote(path string) (*Note, error) {
 	if note.Title != "" {
 		titleLower := strings.ToLower(note.Title)
 		for _, fact := range note.Facts {
+			// Explicit questions ("What ...? :: answer") are exempt from the
+			// topic-first rule.
+			if cue, _, n := SplitMarker(fact); n > 0 && IsQuestion(cue) {
+				continue
+			}
 			if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(fact)), titleLower) {
 				fmt.Fprintf(os.Stderr, "warning: fact in %s does not begin with topic %q: %s\n",
 					path, note.Title, fact)
