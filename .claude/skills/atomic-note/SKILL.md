@@ -16,7 +16,7 @@ Edit this value to change where notes are written. Keep it equal to
 notes.
 
 ```
-NOTES_ROOT: ~/Documents/RedHatNotes/Resources
+NOTES_ROOT: ~/Notes
 ```
 
 ## Input

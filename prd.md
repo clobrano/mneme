@@ -400,7 +400,7 @@ built-in defaults; a missing file is not an error.
 # ~/.config/<app>/config.yaml
 
 # Where the atomic notes live. Source of truth; never written to.
-notes_dir: ~/Documents/RedHatNotes/Resources
+notes_dir: ~/Notes
 
 # Default filter applied by `review` when no --tag flags are given.
 review:
@@ -419,7 +419,7 @@ Rules:
   does not merge.
 - Paths **MUST** expand a leading `~` and environment variables.
 - `notes_dir` default, if unset everywhere, is
-  `~/Documents/RedHatNotes/Resources`.
+  `~/Notes`.
 - Unknown keys **SHOULD** produce a warning, not a hard failure.
 - The tool **MAY** provide `notecards config path` (print the resolved config
   path) and `notecards config init` (write a commented default file).

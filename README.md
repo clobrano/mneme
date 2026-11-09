@@ -75,7 +75,7 @@ go install github.com/clobrano/mneme/cmd/mneme@latest
 
 ```yaml
 # Where your atomic notes live. Never written to.
-notes_dir: ~/Documents/notes
+notes_dir: ~/Notes
 
 # Default filter applied by `review` when no --tag flags are given.
 review:
