@@ -23,7 +23,7 @@ type Config struct {
 // DefaultConfig returns the built-in defaults.
 func DefaultConfig() *Config {
 	cfg := &Config{}
-	cfg.NotesDir = "~/Documents/RedHatNotes/Resources"
+	cfg.NotesDir = "~/Notes"
 	cfg.Review.Match = "any"
 	return cfg
 }

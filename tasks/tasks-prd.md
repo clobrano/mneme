@@ -49,7 +49,7 @@
 
 - [ ] 2.0 Configuration Loading
   - [ ] 2.1 In `internal/config/config.go`, define the `Config` struct with fields: `NotesDir string`, `Database string`, and a nested `Review struct { Tags []string; Match string; Exclude []string }`. Match the YAML layout in §11.1 of the PRD exactly.
-  - [ ] 2.2 Implement `DefaultConfig()` that returns built-in defaults: `NotesDir = ~/Documents/RedHatNotes/Resources`, `Review.Match = "any"`, all slices empty.
+  - [ ] 2.2 Implement `DefaultConfig()` that returns built-in defaults: `NotesDir = ~/Notes`, `Review.Match = "any"`, all slices empty.
   - [ ] 2.3 Implement `XDGConfigPath()` that returns `$XDG_CONFIG_HOME/mneme/config.yaml`, falling back to `~/.config/mneme/config.yaml` when `XDG_CONFIG_HOME` is unset.
   - [ ] 2.4 Implement `XDGStatePath()` that returns `$XDG_STATE_HOME/mneme/mneme.db`, falling back to `~/.local/state/mneme/mneme.db`.
   - [ ] 2.5 Implement `Load(path string) (*Config, error)`: read and unmarshal the YAML file; if the file does not exist, return `DefaultConfig()` with no error; if the file exists but has unknown keys, print a warning to stderr and continue.

@@ -2,6 +2,7 @@ package generator
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -14,29 +15,47 @@ type Card struct {
 	NoteID       int64
 	SentenceHash string
 	ClozeKey     string
-	Kind         string // definition | cloze | property
+	Kind         string // definition | cloze | question
 	Front        string
 	Back         string
 	Source       string // always "template" in v1
 }
 
+// Card kinds.
+const (
+	KindDefinition = "definition"
+	KindCloze      = "cloze"
+	KindQuestion   = "question"
+)
+
+// Reasons a fact produces no card.
+var (
+	// ErrNoMarker: the fact has neither "::" nor **bold**. Not an error in the
+	// note (not every fact needs a card) but reported so the author can spot
+	// omissions.
+	ErrNoMarker = errors.New("no '::' or **bold** marker")
+	// ErrMultipleMarkers: more than one "::" outside code spans.
+	ErrMultipleMarkers = errors.New("more than one '::' marker")
+	// ErrEmptyCue: nothing before "::".
+	ErrEmptyCue = errors.New("nothing before '::'")
+	// ErrEmptyAnswer: nothing after "::".
+	ErrEmptyAnswer = errors.New("nothing after '::'")
+)
+
 var (
 	wikiRe       = regexp.MustCompile(`\[\[([^\]]+)\]\]`)
 	whitespaceRe = regexp.MustCompile(`\s+`)
+	trailPunctRe = regexp.MustCompile(`[.!;,]+$`)
 )
 
 // SentenceHash computes the canonical hash for a sentence per §6.1.
+// Callers pass the sentence with the "::" marker already removed, so moving
+// the marker within a sentence does not change the sentence's identity.
 func SentenceHash(sentence string) string {
 	// 1. Trim
 	s := strings.TrimSpace(sentence)
 	// 2. Replace [[X]] with X
-	s = wikiRe.ReplaceAllStringFunc(s, func(m string) string {
-		inner := wikiRe.FindStringSubmatch(m)
-		if len(inner) > 1 {
-			return inner[1]
-		}
-		return m
-	})
+	s = stripWikiLinks(s)
 	// 3. Lowercase
 	s = strings.ToLower(s)
 	// 4. Collapse whitespace runs to single space
@@ -50,129 +69,125 @@ func SentenceHash(sentence string) string {
 	return fmt.Sprintf("%x", h)
 }
 
-// ClozeKey returns the normalized cloze key for a wiki-link inner text.
-// Returns empty string for definition/property cards.
-func ClozeKey(linkText string) string {
-	return strings.ToLower(linkText)
+// ClozeKey returns the normalized key of an answer: wiki-links unwrapped,
+// lowercased, whitespace collapsed, trailing punctuation removed.
+// Together with the sentence hash it identifies a card, so moving the "::"
+// marker to a different answer creates a new card.
+func ClozeKey(answer string) string {
+	s := strings.ToLower(stripWikiLinks(answer))
+	s = whitespaceRe.ReplaceAllString(s, " ")
+	s = strings.TrimSpace(s)
+	return strings.TrimSpace(strings.TrimRight(s, ".,;!?"))
 }
 
-// GenerateCards generates all cards for a note deterministically.
+func stripWikiLinks(s string) string {
+	return wikiRe.ReplaceAllString(s, "$1")
+}
+
+// FactCards turns one fact into cards. Two markers are recognised, both
+// ignored inside `code spans`:
+//
+//   - **bold**: one cloze card per bold span ("Kubernetes stores state in ___.")
+//   - "::" (at most one per fact) splits cue from answer:
+//     "Question? :: answer"     → question card (front = the question)
+//     "TOPIC is :: definition." → definition card ("What is TOPIC?")
+//     "cue :: answer."          → cloze card ("cue ___.")
+//
+// The markers are removed from the card text. It returns an error (one of the
+// Err* values) when the fact yields no card.
+func FactCards(topic, fact string) ([]Card, error) {
+	cueRaw, answerRaw, n := parser.SplitMarker(fact)
+	bold := parser.BoldSpans(fact)
+	switch {
+	case n > 1:
+		return nil, ErrMultipleMarkers
+	case n == 0 && len(bold) == 0:
+		return nil, ErrNoMarker
+	case n == 1 && cueRaw == "":
+		return nil, ErrEmptyCue
+	case n == 1 && answerRaw == "":
+		return nil, ErrEmptyAnswer
+	}
+
+	// raw is the fact without "::" but with bold markers; sentence is the
+	// clean text shown on the back and used for the sentence hash, so adding,
+	// moving or removing markers never changes the sentence's identity.
+	raw := cueRaw
+	if n == 1 {
+		raw = cueRaw + " " + answerRaw
+	}
+	sentence := parser.StripBold(raw)
+	hash := SentenceHash(sentence)
+
+	var cards []Card
+	seen := make(map[string]bool)
+	add := func(c Card) {
+		if seen[c.ClozeKey] {
+			return
+		}
+		seen[c.ClozeKey] = true
+		c.SentenceHash = hash
+		c.Source = "template"
+		cards = append(cards, c)
+	}
+
+	if n == 1 {
+		cue, answer := parser.StripBold(cueRaw), parser.StripBold(answerRaw)
+		c := Card{ClozeKey: ClozeKey(answer)}
+		switch {
+		case parser.IsQuestion(cue):
+			c.Kind = KindQuestion
+			c.Front = cue
+			c.Back = answer
+		case isDefinitionCue(topic, cue):
+			verb := strings.ToLower(cue[len(topic)+1:])
+			c.Kind = KindDefinition
+			c.Front = fmt.Sprintf("What %s %s?", verb, cue[:len(topic)])
+			c.Back = sentence
+		default:
+			c.Kind = KindCloze
+			c.Front = cue + " ___" + trailPunctRe.FindString(answer)
+			c.Back = sentence
+		}
+		add(c)
+	}
+
+	for i, sp := range parser.BoldSpans(raw) {
+		add(Card{
+			Kind:     KindCloze,
+			ClozeKey: ClozeKey(sp.Text),
+			Front:    parser.ReplaceBold(raw, i, "___"),
+			Back:     sentence,
+		})
+	}
+	return cards, nil
+}
+
+// isDefinitionCue reports whether the cue is exactly "TOPIC is" or "TOPIC are".
+func isDefinitionCue(topic, cue string) bool {
+	if topic == "" || len(cue) <= len(topic) {
+		return false
+	}
+	if !strings.EqualFold(cue[:len(topic)], topic) {
+		return false
+	}
+	rest := strings.ToLower(cue[len(topic):])
+	return rest == " is" || rest == " are"
+}
+
+// GenerateCards generates all cards for a note deterministically from the
+// markers in its facts (see FactCards). Facts without markers produce no card.
 func GenerateCards(note *parser.Note) []Card {
 	var cards []Card
-
-	topic := note.Title
-	// Find the first "is"/"are" sentence index
-	isAreSentenceIdx := -1
-	isAreRe := regexp.MustCompile(`\b(is|are)\b`)
-	for i, fact := range note.Facts {
-		if isAreRe.MatchString(fact) {
-			isAreSentenceIdx = i
-			break
+	for _, fact := range note.Facts {
+		fc, err := FactCards(note.Title, fact)
+		if err != nil {
+			continue
+		}
+		for _, c := range fc {
+			c.NoteID = note.ID
+			cards = append(cards, c)
 		}
 	}
-
-	for i, fact := range note.Facts {
-		links := parser.ExtractWikiLinks(fact)
-		hasIsAre := i == isAreSentenceIdx
-
-		// Generate definition card for the first is/are sentence
-		if hasIsAre {
-			front := fmt.Sprintf("What is %s?", topic)
-			if topic == "" {
-				front = "What is it?"
-			}
-			cards = append(cards, Card{
-				NoteID:       note.ID,
-				SentenceHash: SentenceHash(fact),
-				ClozeKey:     "",
-				Kind:         "definition",
-				Front:        front,
-				Back:         fact,
-				Source:       "template",
-			})
-		}
-
-		// Generate cloze cards for wiki-links
-		if len(links) > 0 {
-			// Deduplicate links while preserving order
-			seen := make(map[string]bool)
-			for _, link := range links {
-				key := ClozeKey(link)
-				if seen[key] {
-					continue
-				}
-				seen[key] = true
-
-				// Replace only THIS link's text with ___, leave others intact
-				front := replaceSingleLink(fact, link)
-
-				cards = append(cards, Card{
-					NoteID:       note.ID,
-					SentenceHash: SentenceHash(fact),
-					ClozeKey:     key,
-					Kind:         "cloze",
-					Front:        front,
-					Back:         fact,
-					Source:       "template",
-				})
-			}
-		} else if !hasIsAre {
-			// Property card: sentence with no is/are and no wiki-links
-			front := makePropertyFront(fact, topic)
-			cards = append(cards, Card{
-				NoteID:       note.ID,
-				SentenceHash: SentenceHash(fact),
-				ClozeKey:     "",
-				Kind:         "property",
-				Front:        front,
-				Back:         fact,
-				Source:       "template",
-			})
-		}
-	}
-
 	return cards
-}
-
-// replaceSingleLink replaces [[linkText]] with ___ in the sentence (first occurrence only).
-// Other wiki-links are left intact.
-func replaceSingleLink(sentence, linkText string) string {
-	target := "[[" + linkText + "]]"
-	idx := strings.Index(sentence, target)
-	if idx == -1 {
-		return sentence
-	}
-	return sentence[:idx] + "___" + sentence[idx+len(target):]
-}
-
-// makePropertyFront produces the front for a property card by replacing
-// the predicate (everything after TOPIC + first token) with ___.
-func makePropertyFront(fact, topic string) string {
-	if topic == "" {
-		return "___"
-	}
-
-	lower := strings.ToLower(fact)
-	lowerTopic := strings.ToLower(topic)
-
-	// Check fact starts with topic
-	if !strings.HasPrefix(lower, lowerTopic) {
-		// Can't build proper front; blank it
-		return fact
-	}
-
-	// Remove topic prefix
-	rest := strings.TrimSpace(fact[len(topic):])
-
-	// Find first whitespace after first token
-	fields := strings.Fields(rest)
-	if len(fields) == 0 {
-		return fact
-	}
-
-	firstToken := fields[0]
-	// Find where firstToken ends in rest
-	tokenEnd := strings.Index(rest, firstToken) + len(firstToken)
-	prefix := fact[:len(topic)] + " " + rest[:tokenEnd]
-	return strings.TrimSpace(prefix) + " ___"
 }

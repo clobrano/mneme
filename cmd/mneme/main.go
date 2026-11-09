@@ -26,7 +26,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  orphans                        List orphaned cards\n")
 		fmt.Fprintf(os.Stderr, "  resolve    [--undo]            Manually resolve orphans\n")
 		fmt.Fprintf(os.Stderr, "  stats                          Show deck statistics\n")
-		fmt.Fprintf(os.Stderr, "  generate   [--json]            Generate cards from notes (no DB)\n")
+		fmt.Fprintf(os.Stderr, "  generate   [--unmarked]        Preview cards from notes (no DB)\n")
 		fmt.Fprintf(os.Stderr, "\nGlobal options:\n")
 		flag.PrintDefaults()
 	}

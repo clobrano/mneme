@@ -36,9 +36,9 @@ func TestSyncNeverWritesResolutionLog(t *testing.T) {
 	writeNote(t, dir, "kubernetes.md", `# Kubernetes
 #research
 
-Kubernetes is a container orchestration platform.
+Kubernetes is :: a container orchestration platform.
 
-Kubernetes uses [[etcd]] for storage.
+Kubernetes uses **[[etcd]]** for storage.
 `)
 
 	_, err := Sync(db, dir)
@@ -66,7 +66,7 @@ func TestCosmeticWikiLinkRename(t *testing.T) {
 	notePath := writeNote(t, dir, "kubernetes.md", `# Kubernetes
 #research
 
-Kubernetes uses [[etcd]] for storage.
+Kubernetes uses **[[etcd]]** for storage.
 `)
 
 	result1, err := Sync(db, dir)
@@ -81,7 +81,7 @@ Kubernetes uses [[etcd]] for storage.
 	if err := os.WriteFile(notePath, []byte(`# Kubernetes
 #research
 
-Kubernetes uses [[ETCD]] for storage.
+Kubernetes uses **[[ETCD]]** for storage.
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestRewordingOrphans(t *testing.T) {
 	notePath := writeNote(t, dir, "kubernetes.md", `# Kubernetes
 #research
 
-Kubernetes is a container orchestration platform.
+Kubernetes is :: a container orchestration platform.
 `)
 
 	result1, err := Sync(db, dir)
@@ -119,7 +119,7 @@ Kubernetes is a container orchestration platform.
 	if err := os.WriteFile(notePath, []byte(`# Kubernetes
 #research
 
-Kubernetes is an orchestration system for containers.
+Kubernetes is :: an orchestration system for containers.
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestNoteDeleteOrphansCards(t *testing.T) {
 	notePath := writeNote(t, dir, "kubernetes.md", `# Kubernetes
 #research
 
-Kubernetes is a container orchestration platform.
+Kubernetes is :: a container orchestration platform.
 `)
 
 	result1, err := Sync(db, dir)
@@ -186,7 +186,7 @@ func TestTagUpdatePreservesCardHistory(t *testing.T) {
 	notePath := writeNote(t, dir, "kubernetes.md", `# Kubernetes
 #research
 
-Kubernetes is a container orchestration platform.
+Kubernetes is :: a container orchestration platform.
 `)
 
 	_, err := Sync(db, dir)
@@ -221,7 +221,7 @@ Kubernetes is a container orchestration platform.
 #research
 #area/kubernetes
 
-Kubernetes is a container orchestration platform.
+Kubernetes is :: a container orchestration platform.
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestSyncIncrementalUnchanged(t *testing.T) {
 	writeNote(t, dir, "kubernetes.md", `# Kubernetes
 #research
 
-Kubernetes is a container orchestration platform.
+Kubernetes is :: a container orchestration platform.
 `)
 
 	result1, err := Sync(db, dir)
