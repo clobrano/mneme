@@ -50,7 +50,7 @@ The repository ships a Claude Code skill, [`atomic-note`](.claude/skills/atomic-
 /atomic-note etcd
 ```
 
-The topic is required on every call. The destination directory is set once, in the skill's `NOTES_ROOT` setting; keep it equal to mneme's `notes_dir`. The skill is available when Claude Code runs inside this repository. To use it everywhere, copy `.claude/skills/atomic-note/` to `~/.claude/skills/`.
+The topic is required on every call. The destination directory (`NOTES_ROOT`, default `~/Notes`; keep it equal to mneme's `notes_dir`) and the header tags (`TAGS`, default `#mneme`) are set once, in the skill's configuration block. The skill is available when Claude Code runs inside this repository. To use it everywhere, copy `.claude/skills/atomic-note/` to `~/.claude/skills/`.
 
 ## Install
 

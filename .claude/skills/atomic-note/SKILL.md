@@ -11,13 +11,18 @@ parses into flashcards.
 
 ## Configuration
 
-Edit this value to change where notes are written. Keep it equal to
-`notes_dir` in `~/.config/mneme/config.yaml`, otherwise mneme won't see the
-notes.
+Edit these values to fit your setup.
 
 ```
 NOTES_ROOT: ~/Notes
+TAGS: #mneme
 ```
+
+- `NOTES_ROOT`: where notes are written. Keep it equal to `notes_dir` in
+  `~/.config/mneme/config.yaml`, otherwise mneme won't see the notes.
+- `TAGS`: the tags written in every note's header, space-separated (e.g.
+  `#mneme #area/kubernetes`). Use exactly these tags: don't add, drop or
+  invent any. mneme can filter review sessions by them (`review --tag`).
 
 ## Input
 
@@ -53,9 +58,7 @@ conversation. Never ask for the destination; it comes from `NOTES_ROOT`.
 
 ```markdown
 # <TITLE>
-#research
-#study
-#area/<domain>
+<TAGS>
 
 <TITLE> is :: <one-line definition>.
 
@@ -67,9 +70,9 @@ conversation. Never ask for the destination; it comes from `NOTES_ROOT`.
 ```
 
 - **Header:** `# <TITLE>` on the first line, then tag lines directly below it,
-  with no blank line in between. Always include `#research` and `#study`; add
-  one or more `#area/<domain>` tags (lowercase, hyphenated, e.g.
-  `#area/kubernetes`). Then a blank line.
+  with no blank line in between: the configured `TAGS`, exactly, on one line.
+  Then a blank line. When adding to an existing note, leave its tags as they
+  are.
 - **Facts:** one fact per paragraph, one sentence per fact, separated by blank
   lines. Never use bullet lists, headings, or multi-sentence paragraphs in the
   body.
@@ -117,7 +120,7 @@ thing**:
 ## Checklist
 
 - [ ] File is `<NOTES_ROOT>/<TITLE>.md`; existing facts were not changed.
-- [ ] Title line, tag lines (`#research`, `#study`, `#area/...`), blank line.
+- [ ] Title line, the configured `TAGS` line, blank line.
 - [ ] Each paragraph is one sentence starting with `<TITLE>` (or an explicit
       question).
 - [ ] First fact is `<TITLE> is :: …`.
@@ -131,9 +134,7 @@ Input: `etcd`
 
 ```markdown
 # etcd
-#research
-#study
-#area/kubernetes
+#mneme
 
 etcd is :: a distributed, consistent key-value store.
 
