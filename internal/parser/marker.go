@@ -11,7 +11,7 @@ const Marker = "::"
 var boldRe = regexp.MustCompile(`\*\*([^*]+?)\*\*`)
 
 // maskCode returns a copy of s in which every inline code span (`...`,
-// ``...``, ...) is replaced byte-for-byte with NUL characters. Indices in the
+// “...“, ...) is replaced byte-for-byte with NUL characters. Indices in the
 // result match indices in s, so markup found in the mask can be located in s
 // while anything inside code is ignored.
 func maskCode(s string) string {

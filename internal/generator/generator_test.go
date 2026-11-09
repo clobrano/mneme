@@ -160,8 +160,8 @@ func TestNoCardErrors(t *testing.T) {
 	cases := map[string]error{
 		"Kubernetes supports horizontal scaling.": ErrNoMarker,
 		"Kubernetes uses :: etcd :: for storage.": ErrMultipleMarkers,
-		":: etcd":                                 ErrEmptyCue,
-		"Kubernetes uses ::":                      ErrEmptyAnswer,
+		":: etcd":            ErrEmptyCue,
+		"Kubernetes uses ::": ErrEmptyAnswer,
 	}
 	for fact, want := range cases {
 		if _, err := FactCards("Kubernetes", fact); !errors.Is(err, want) {
