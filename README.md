@@ -42,6 +42,16 @@ The last fact has no marker, so it produces no card — not every fact has to be
 
 Learning history survives note edits. When you reword a fact the old card is **orphaned** (not deleted) and a new card is created. You then manually decide — via `mneme resolve` — whether to transfer the old card's study history to the new one.
 
+## Writing notes with an AI agent
+
+The repository ships a Claude Code skill, [`atomic-note`](.claude/skills/atomic-note/SKILL.md), that writes an atomic note in this format for a given topic, marks the answers, and lists the cards it will produce.
+
+```
+/atomic-note etcd
+```
+
+The topic is required on every call. The destination directory is set once, in the skill's `NOTES_ROOT` setting; keep it equal to mneme's `notes_dir`. The skill is available when Claude Code runs inside this repository. To use it everywhere, copy `.claude/skills/atomic-note/` to `~/.claude/skills/`.
+
 ## Install
 
 **From source** (requires Go 1.22+):
