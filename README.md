@@ -44,13 +44,20 @@ Learning history survives note edits. When you reword a fact the old card is **o
 
 ## Writing notes with an AI agent
 
-The repository ships a Claude Code skill, [`atomic-note`](.claude/skills/atomic-note/SKILL.md), that writes an atomic note in this format for a given topic, marks the answers, and lists the cards it will produce.
+The repository ships a Claude Code skill, [`atomic-note`](skills/atomic-note/SKILL.md), that writes an atomic note in this format for a given topic, marks the answers, and lists the cards it will produce.
 
 ```
 /atomic-note etcd
 ```
 
-The topic is required on every call. The destination directory (`NOTES_ROOT`, default `~/Notes`; keep it equal to mneme's `notes_dir`) and the header tags (`TAGS`, default `#mneme`) are set once, in the skill's configuration block. The skill is available when Claude Code runs inside this repository. To use it everywhere, copy `.claude/skills/atomic-note/` to `~/.claude/skills/`.
+The topic is required on every call. The destination directory (`NOTES_ROOT`, default `~/Notes`; keep it equal to mneme's `notes_dir`) and the header tags (`TAGS`, default `#mneme`) are set once, in the skill's configuration block.
+
+Install it by copying it into your Claude Code skills directory, then edit the configuration block in the copy:
+
+```sh
+mkdir -p ~/.claude/skills
+cp -r skills/atomic-note ~/.claude/skills/
+```
 
 ## Install
 
